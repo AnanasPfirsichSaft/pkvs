@@ -1,0 +1,16 @@
+[Unit]
+Description=Storing encryption keys in a php-based vault
+Documentation=https://github.com/AnanasPfirsichSaft/pkvs
+After=multi-user.target
+
+[Service]
+User=username
+Type=oneshot
+RemainAfterExit=no
+Restart=no
+ProtectSystem=strict
+ProtectHome=true
+ExecStart=/usr/bin/php /path/to/server.php --cipher=auto
+
+[Install]
+WantedBy=multi-user.target
