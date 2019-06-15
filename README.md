@@ -56,6 +56,7 @@ but the keys are plaintext. Unless you use another layer like HMAC them :)
 
 ## Examples
 
+```
 server.php --cipher=auto
 server.php --hash-psk
 server.php --gen-key=1,256
@@ -75,6 +76,7 @@ C: get 1
 S: [thekey]
 C: quit
 S: bye
+```
 
 ## Updates
 
