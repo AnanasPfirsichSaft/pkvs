@@ -6,7 +6,7 @@ https://github.com/AnanasPfirsichSaft/pkvs
 
 MIT License
 
-Copyright (c) 2019 AnanasPfirsichSaft
+Copyright (c) 2019-2021 AnanasPfirsichSaft
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,8 +25,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. */
-define('PKVS_VERSION','1');
-define('PKVS_BIND_HOST','127.0.0.1');
+define('PKVS_VERSION',2);
+define('PKVS_BIND_HOST','::1');
 define('PKVS_BIND_PORT',2019);
 define('PKVS_MAX_CLIENTS',16);
 define('PKVS_MAXIMUM_ALERT_LEVEL',5);
@@ -59,6 +59,7 @@ $__auth_psk = array();
 $__auth_config_group = 0;
 $__auth_shutdown_group = 0;
 $__auth_status_group = 0;
+$__auth_file_in_fs = '';
 $__alert_level = 0;
 $__last_reply = 0;
 $__greets = array(
@@ -82,14 +83,14 @@ trigger_error('socket error in "'.$a.'" says "'.$e.'"',E_USER_ERROR);}
 function pkvs_client_slot(){return array('sock'=>null,'ip'=>null,'port'=>null,'rx_cmds'=>0,'auth'=>false,'key_group'=>0);}
 function pkvs_close_socket($a){global $__clients;
 socket_close($__clients[$a]['sock']);$__clients[$a] = pkvs_client_slot();return;}
-function pkvs_encrypt($a,$b=''){global $__key,$__iv;
+function pkvs_encrypt($a,$b=''){global $__key,$__iv,$__tag;
 $k = ( strlen($b) === 0 ) ? $__key : $b;
-pkvs_sanitize($k,__LINE__);pkvs_sanitize($b,__LINE__); // unsure, if we should use zero padding?
-$b = openssl_encrypt($a,PKVS_CRYPT_ALGO,$k,OPENSSL_RAW_DATA,$__iv);return $b;}
-function pkvs_decrypt($a,$b=''){global $__key,$__iv;
+pkvs_sanitize($k,__LINE__);pkvs_sanitize($b,__LINE__); // unsure, if we should use zero padding as openssl option?
+$b = openssl_encrypt($a,PKVS_CRYPT_ALGO,$k,OPENSSL_RAW_DATA,$__iv,$__tag);return $b;}
+function pkvs_decrypt($a,$b=''){global $__key,$__iv,$__tag;
 $k = ( strlen($b) === 0 ) ? $__key : $b;
 pkvs_sanitize($k,__LINE__);pkvs_sanitize($b,__LINE__);
-$b = openssl_decrypt($a,PKVS_CRYPT_ALGO,$k,OPENSSL_RAW_DATA,$__iv);return $b;}
+$b = openssl_decrypt($a,PKVS_CRYPT_ALGO,$k,OPENSSL_RAW_DATA,$__iv,$__tag);return $b;}
 function pkvs_sanitize(&$a,$b){if(in_array(gettype($a),array('string','integer','double'),true))$a = str_repeat(PKVS_SANITIZE_STRING,strlen($a));/*else trigger_error('tried to sanitize non-string ('.gettype($a).') on line '.intval($b),E_USER_NOTICE);*/}
 function pkvs_hash($a,$b=1){
 if ( $b === 1 ){$c=sha1($a);for($i=0;$i<=PKVS_HASH_ITERATIONS;$i++)$c=sha1($c);return $c;}
@@ -104,10 +105,10 @@ global $__key,$__key_left,$__key_right;
 		$b = explode(';',PKVS_KEY_POOL);
 			switch ( $b[0] ){
 			case 'FILE':
-			$__key_right = file_get_contents($b[1],false,null,0,floor(PKVS_KEY_LENGTH/2));
+			$__key_right = ( is_file($b[1]) && is_readable($b[1]) ) ? file_get_contents($b[1],false,null,0,floor(PKVS_KEY_LENGTH/2)) : '';
 			break;
 			}
-			if ( strlen($__key_left.$__key_right) < PKVS_KEY_LENGTH )
+			if ( strlen($__key_right) > 0 && strlen($__key_left.$__key_right) < PKVS_KEY_LENGTH )
 			trigger_error('encryption key is too short',E_USER_ERROR);
 			if ( strlen($__key_left.$__key_right) > PKVS_KEY_LENGTH ){
 			$__key_right = substr($__key_right,0,floor(PKVS_KEY_LENGTH/2));
@@ -174,9 +175,9 @@ $ciphers = openssl_get_cipher_methods();
 array_walk($ciphers,'pkvs_cipher_helper');
 $ciphers = array_unique($ciphers);
 sort($ciphers);
-	foreach ( $ciphers as $key=>$value ){ // remove meaningless modes and unsafe ciphers
-		if ( preg_match('/(hmac|wrap|pad|ecb|[gc]+cm|ctr|xts|fb[0-9]{1}|rc[0-9]+)/',$value) )
-		unset($ciphers[$key]); // well, i was tempted to remove idea, cast, seed and des either...
+	foreach ( $ciphers as $key=>$value ){ // remove meaningless or unsafe modes [ecb!] and not correctly working ciphers [ccm,gcm,ocb]
+		if ( preg_match('/(hmac|wrap|pad|ecb|ocb|[gc]+cm|idea|cast|des|seed|rc[0-9]+)/',$value) )
+		unset($ciphers[$key]);
 	}
 echo wordwrap(implode(', ',$ciphers),72)."\n\n";
 echo "Supported psk hash methods:\n";
@@ -186,8 +187,10 @@ $all_constants = get_defined_constants();
 		echo "$key => $value\n";
 	}
 echo "\n";
+echo "PKVS will bind to address '".PKVS_BIND_HOST."' on port ".PKVS_BIND_PORT."\n\n";
 echo "--cipher=[name]\t\tUse cipher for encrypting the keys in vault\n";
 echo "\t\t\tSet 'auto', if unsure.\n";
+echo "--auth-file=[filename]\tExistence of this file is required to supply keys\n";
 echo "--pool=[fd]\t\tGet second half of the session key from external source\n";
 echo "--log=[filename]\tAlso forward outputs to logfile\n";
 echo "--no-auth\t\tNo authentication required for clients\n";
@@ -227,7 +230,7 @@ $cli_args = array();
 			$buffer = preg_replace('/[\x00-\x1f]+/','',trim($buffer));
 			fclose($fp);
 			}
-		die('Please include this psk into your configuration xml file:'.chr(10).chr(10).'<psk id=\'[ANYNUMBER]\' scheme=\'2\'>'.crypt($buffer,'$5$rounds=50000$'.bin2hex(openssl_random_pseudo_bytes(8,$iamtrue)).'$').'</psk>'.chr(10).chr(10));
+		die('Please include this psk into your configuration xml file:'.chr(10).chr(10).'<psk id=\'[ANYNUMBER]\' scheme=\'2\'>'.crypt($buffer,'$5$rounds='.PKVS_HASH_ITERATIONS.'$'.bin2hex(openssl_random_pseudo_bytes(8,$iamtrue)).'$').'</psk>'.chr(10).chr(10));
 		}
 		if ( substr($v,0,10) === '--gen-key=' ){
 		$v = explode(',',substr($v,10));
@@ -256,14 +259,14 @@ $cli_args = array();
 		$v = substr($v,9);
 			if ( $v === 'auto' ){
 			$ci = openssl_get_cipher_methods();
-			$pr = array(
+			$pr = array( // i removed 'ofb' as i am unsure if this is a safe mode?
+			'aes-256-ctr',
+			'camellia-256-ctr',
+			'aes-128-ctr',
+			'camellia-128-ctr',
 			'aes-256-cbc',
-			'camellia-256-ofb',
 			'camellia-256-cbc',
-			'aes-128-cbc',
-			'camellia-128-ofb',
 			'camellia-128-cbc',
-			'bf-ofb',
 			'bf-cbc'
 			);
 				foreach ( $pr as $v ){
@@ -279,6 +282,10 @@ $cli_args = array();
 			define('PKVS_KEY_POOL','FILE;'.$v);
 			else
 			trigger_error('additional key material could not be read from pool. falling back to random key.',E_USER_WARNING);
+		}
+		if ( substr($v,0,12) === '--auth-file=' ){
+		$v = substr($v,12);
+		$__auth_file_in_fs = $v;
 		}
 		if ( $v === '--no-socket' )
 		define('PKVS_DRYRUN',true);
@@ -300,6 +307,8 @@ pkvs_echo('PHP Version is '.PHP_VERSION.' on '.PHP_OS);
 	pkvs_echo('Enabling log file "'.PKVS_LOGFILE.'"');
 	if ( defined('PKVS_NOAUTH') )
 	pkvs_echo('Disabling client authentication');
+	if ( strlen($__auth_file_in_fs) > 0 )
+	pkvs_echo('Authentication file is required - '.$__auth_file_in_fs);
 	if ( extension_loaded('pcntl') ){
 	pkvs_echo('Setup new signal handler for TERM, HUP and USR1');
 	pcntl_signal(SIGTERM,'pkvs_signal_handler');
@@ -326,16 +335,21 @@ $__key_left = openssl_random_pseudo_bytes(floor(PKVS_KEY_LENGTH/2),$iamtrue);
 	}
 pkvs_echo('Grabbing initialization vector');
 $__iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length(PKVS_CRYPT_ALGO),$iamtrue);
+$__tag = '';
 	if ( !defined('PKVS_DRYRUN') ){
 	pkvs_echo('Getting a socket to establish network connections');
-	$sock = socket_create(AF_INET,SOCK_STREAM,SOL_TCP);
+		if ( strpos(PKVS_BIND_HOST,':') !== false )
+		$sock = AF_INET6;
+		else
+		$sock = AF_INET;
+	$sock = socket_create($sock,SOCK_STREAM,SOL_TCP);
 		if ( !$sock )
 		pkvs_socket_error('socket_create');
 		if ( !socket_bind($sock,PKVS_BIND_HOST,PKVS_BIND_PORT) )
 		pkvs_socket_error('socket_bind');
 		if ( !socket_listen($sock,3) )
 		pkvs_socket_error('socket_listen');
-	pkvs_echo('Listening on '.PKVS_BIND_HOST.':'.PKVS_BIND_PORT.' for incoming connections');
+	pkvs_echo('Listening on address '.PKVS_BIND_HOST.' and port '.PKVS_BIND_PORT.' for incoming connections');
 	pkvs_echo('Used transport protocol is TCP. I read the sockets binary-safe.');
 	pkvs_echo('Maximum number of simulatenous connections is '.PKVS_MAX_CLIENTS);
 	pkvs_echo('Clients are allowed to issue '.PKVS_MAXIMUM_CLIENT_COMMANDS_PER_CONNECTION.' commands per connection');
@@ -415,11 +429,11 @@ unset($fp,$eb,$kl);
 				$input = substr($input,1);
 				pkvs_echo(chr(9).'client tried to send system command - trimming input',true,'NOLOG');
 				}
-			$bs = substr_count($input,' ');
+/*			$bs = substr_count($input,' ');
 				if ( $bs > 16 ){ // abort on too many blank spaces
 				$input = '_ too_many_blank_spaces';
 				pkvs_echo(chr(9).'client sent too much blank spaces {'.$bs.'} - blanking input',true,'NOLOG');
-				}
+				}*/
 			$__stats['rx'] += strlen($input);
 			$__clients[$i]['rx_cmds']++;
 			$close = false;
@@ -447,6 +461,13 @@ unset($fp,$eb,$kl);
 					if ( $__clients[$i]['auth'] ){
 					$output = pkvs_reply(200,'you are already authenticated');
 					break;
+					}
+					if ( strlen($__auth_file_in_fs) > 0 ){
+					clearstatcache(true,$__auth_file_in_fs);
+						if ( !file_exists($__auth_file_in_fs) ){
+						$output = pkvs_reply(403,'authentication file is missing');
+						break;
+						}
 					}
 				$ok = -1;
 				$pf = ( isset($stack[1]) ) ? $stack[1] : '';
@@ -764,7 +785,7 @@ unset($fp,$eb,$kl);
 					}
 					else{
 					pkvs_echo(chr(9).'sending '.strlen($output).' bytes to client '.$i.' with code '.$__last_reply);
-					pkvs_echo(chr(9).chr(9).'client '.$i.' => input('.wordwrap($input,72,"\n\t\t",true).') output('.wordwrap(preg_replace('/[\t\r\n\0]+/',' ',rtrim($output)),72,"\n\t\t",true).')'.chr(10),true,'NOLOG');
+//					pkvs_echo(chr(9).chr(9).'client '.$i.' => input('.wordwrap($input,72,"\n\t\t",true).') output('.wordwrap(preg_replace('/[\t\r\n\0]+/',' ',rtrim($output)),72,"\n\t\t",true).')'.chr(10),true,'NOLOG');
 						if ( $__last_reply === 200 )
 						$__alert_level = 0;
 					}
@@ -797,6 +818,7 @@ pkvs_sanitize($__key,__LINE__);
 pkvs_sanitize($__key_left,__LINE__);
 pkvs_sanitize($__key_right,__LINE__);
 pkvs_sanitize($__iv,__LINE__);
+pkvs_sanitize($__tag,__LINE__);
 	foreach ( $__vault as $k=>$v )
 	pkvs_sanitize($__vault[$k]['hash'],__LINE__);
 	for ( $i = 0 ; $i < PKVS_MAX_CLIENTS ; $i++ ){

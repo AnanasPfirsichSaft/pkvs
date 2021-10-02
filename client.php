@@ -6,7 +6,7 @@ https://github.com/AnanasPfirsichSaft/pkvs
 
 MIT License
 
-Copyright (c) 2019 AnanasPfirsichSaft
+Copyright (c) 2019-2021 AnanasPfirsichSaft
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -28,7 +28,7 @@ SOFTWARE. */
 error_reporting(-1);
 function fmtreply($a){return "\t".str_replace("\n","\t\n",$a);}
 function pecho($a){global $pkvs_verbose;if($pkvs_verbose)echo $a;}
-$pkvs_host = array('localhost',2019);
+$pkvs_host = array('ip6-localhost',2019);
 $pkvs_file_default = ( strtolower(PHP_OS) == 'linux' ) ? '/tmp/pkvs_data.xml' : 'z:/pkvs_data.xml';
 $pkvs_key = 0;
 $pkvs_file = '';
@@ -70,7 +70,7 @@ $pkvs_verbose = false;
 	echo "================================\n\n";
 	echo "--host=[hostname:port]\tSet hostname and port of PKVS. Can be a direct connection or\n";
 	echo "\t\t\tfor example a forwarded port through an encrypted ssh tunnel.\n";
-	echo "\t\t\tDefault is localhost and port 2019.\n";
+	echo "\t\t\tDefault is ip6-localhost and port 2019.\n";
 	echo "--auth=[string|-]\tAuthentication credential, if needed. Use '-' to ask interactively.\n";
 	echo "--key=[id]\t\tGet the key from vault. If missing, keys will be put.\n";
 	echo "--file=[filename]\tPath to xml file to send with keys and optional configuration.\n";

@@ -5,7 +5,7 @@ https://github.com/AnanasPfirsichSaft/pkvs
 
 MIT License
 
-Copyright (c) 2019 AnanasPfirsichSaft
+Copyright (c) 2019-2021 AnanasPfirsichSaft
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -34,7 +34,7 @@ $addlog = ( isset($_GET['addlog']) ) ? substr(preg_replace('/[^a-zA-Z0-9_ ]+/','
 	syslog(LOG_NOTICE,'src='.$_SERVER['REMOTE_ADDR'].' '.$addlog);
 	closelog();
 	}
-$host = explode(':','localhost:2019');
+$host = explode(':','ip6-localhost:2019');
 $sock = fsockopen($host[0],$host[1]);
 	if ( is_resource($sock) && $key !== 0 ){
 	$a = fread($sock,1024);

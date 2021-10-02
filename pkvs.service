@@ -4,13 +4,28 @@ Documentation=https://github.com/AnanasPfirsichSaft/pkvs
 After=multi-user.target
 
 [Service]
+Type=simple
 User=username
-Type=oneshot
-RemainAfterExit=no
-Restart=no
+Restart=on-failure
+RestartSec=60
+StandardOutput=journal
+StandardError=inherit
+ExecStart=/usr/bin/php /path/to/server.php --cipher=auto
 ProtectSystem=strict
 ProtectHome=true
-ExecStart=/usr/bin/php /path/to/server.php --cipher=auto
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=false
+PrivateUsers=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+MemoryDenyWriteExecute=true
+AmbientCapabilities=
+CapabilityBoundingSet=
+ReadOnlyPaths=/
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
 
 [Install]
 WantedBy=multi-user.target
