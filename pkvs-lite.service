@@ -1,0 +1,33 @@
+[Unit]
+Description=Storing encryption keys in a php-based vault, lite version
+Documentation=https://github.com/AnanasPfirsichSaft/pkvs
+After=multi-user.target
+
+[Service]
+Type=simple
+EnvironmentFile=/path/to/.lite_auth
+User=username
+Restart=on-failure
+RestartSec=60
+StandardOutput=journal
+StandardError=null
+ExecStart=/usr/bin/php -S ip6-localhost:2022 -t /path/to/pkvs
+ExecStop=/usr/bin/wget -q -O - 'http://ip6-localhost:2022/lite.php?cmd=shutdown&auth=${SHUTDOWN_AUTH}'
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+PrivateNetwork=false
+PrivateUsers=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+MemoryDenyWriteExecute=true
+AmbientCapabilities=
+CapabilityBoundingSet=
+ReadOnlyPaths=/
+SystemCallFilter=@system-service
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+
+[Install]
+WantedBy=multi-user.target

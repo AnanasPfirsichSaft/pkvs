@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes'?>
+<pkvs>
+<version>3</version>
+<pool>/path/to/external/keyfile</pool>
+<integrity></integrity>
+<!-- example passphrases are deckard and adria -->
+	<psk id='1' scheme='2'>$5$rounds=50000$3ca72d143f00f6b0$qIiEP1TB3TDGg.hIODNTRWbDA64ehhNVjWeQOkwliaD</psk>
+	<psk id='2' scheme='2'>$5$rounds=50000$4648170f5727c10c$Zo/FDNMKd6sFUerW7mfyPPz52DltgkWDUcZT0.oFbg6</psk>
+	<cmd name='shutdown'>2</cmd>
+	<key id='1' allow='1'>99473bfa20816ffc3f5807a8f60fe741b5f371bb0f64d5586a891395ce09e80d</key>
+	<key id='2' allow='1,2' encode='base64'>Oz/C+wByi6R0PBdvp86QW9IJJKN+e6GFzfRbWrblV1w=</key>
+	<key id='3' deny='*' encode='base64'>XxzbIp9CDTTiGR7796vkOikSqUzkZRyuTySJ5k/ZVXc=</key>
+</pkvs>
