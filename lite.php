@@ -5,7 +5,7 @@ https://github.com/AnanasPfirsichSaft/pkvs
 
 MIT License
 
-Copyright (c) 2022 AnanasPfirsichSaft
+Copyright (c) 2022-2023 AnanasPfirsichSaft
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,7 +26,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE. */
 error_reporting(-1);
 register_shutdown_function('pkvs_cleaner');
-define('PKVS_VERSION',3);
+define('PKVS_VERSION',4);
 define('PKVS_CIPHER','aes-256-ctr');
 
 class pkvs_data {
@@ -86,8 +86,22 @@ pkvs_sanitize($error);
 }
 
 // not timing safe, but has it to be?
-function pkvs_auth($a){global $zz;if(!isset($zz)||!is_string($a))return false;foreach($zz->psk as $k=>$v){if(crypt($a,$v) === $v)return $k;}return false;}
-function pkvs_sanitize(&$a){$a = str_repeat('.',strlen($a));}
+function pkvs_auth($a,$y){
+global $zz;
+if(!isset($zz)||!is_string($a))return false;
+foreach($zz->psk as $k=>$v){
+if ( is_array($y) && !in_array($k,$y,true) ) continue;
+if ( strpos($v,'argon2') !== false ){
+if(password_verify($a,$v))
+return $k;
+}
+else{
+if(crypt($a,$v) === $v)
+return $k;
+}
+}
+return false;}
+function pkvs_sanitize(&$a){if(!is_string($a))return false;$a = str_repeat('.',strlen($a));}
 function pkvs_var2arr(&$a){preg_match_all('/([a-z0-9]+)=["\']{1}(.+?)["\']{1}/u',$a,$b,PREG_SET_ORDER);if ( is_array($b) && sizeof($b) > 0 ){$a = [];
   foreach ( $b as $k ){ if(is_numeric($k[2]))$k[2]=intval($k[2]);$a[$k[1]]=$k[2];}}return true;}
 function pkvs_str2iarr($a){if(!is_bool($a)){$a=explode(',',$a);foreach($a as $k=>$v)$a[$k]=intval($v);}return $a;}
@@ -233,15 +247,21 @@ $error = '';
 	$i = $_GET['key'] ?? 0;
 	$i = intval($i);
 	$a = $_GET['auth'] ?? '';
+	$m = $_GET['msg'] ?? '';
 	$s = @shmop_open(ftok(__FILE__,'A'),'a',0600,10000);
 	$d = ( $s !== false ) ? trim(shmop_read($s,0,10000)) : false;
-		if ( !$d || strlen($d) < 100 ){
+		if ( $d === false || strlen($d) < 100 ){
 		$error = "could not read shared memory data\n";
 		break;
 		}
 	$zz = unserialize($d);
 	pkvs_sanitize($d);
-	$b = pkvs_auth($a);
+		if ( isset($zz->key[$i]) )
+		$y = $zz->key[$i]['allow'];
+		else
+		$y = false;
+	$b = pkvs_auth($a,$y);
+	pkvs_sanitize($y);
 	$a = explode(':',$zz->km2);
 		if ( !$b ){
 		$error = "authorization credential incorrect\n";
@@ -267,7 +287,7 @@ $error = '';
 	case 'lock':
 	$s = @shmop_open(ftok(__FILE__,'A'),'a',0600,10000);
 	$d = ( $s !== false ) ? trim(shmop_read($s,0,10000)) : false;
-		if ( !$d || strlen($d) < 100 ){
+		if ( $d === false || strlen($d) < 100 ){
 		$error = "could not read shared memory data\n";
 		break;
 		}
@@ -289,13 +309,18 @@ $error = '';
 	$a = $_GET['auth'] ?? '';
 	$s = @shmop_open(ftok(__FILE__,'A'),'a',0600,10000);
 	$d = ( $s !== false ) ? trim(shmop_read($s,0,10000)) : false;
-		if ( !$d || strlen($d) < 100 ){
+		if ( $d === false || strlen($d) < 100 ){
 		$error = "could not read shared memory data\n";
 		break;
 		}
 	$zz = unserialize($d);
 	pkvs_sanitize($d);
-	$b = pkvs_auth($a);
+		if ( isset($zz->cmd['shutdown']) )
+		$y = $zz->cmd['shutdown'];
+		else
+		$y = false;
+	$b = pkvs_auth($a,$y);
+	pkvs_sanitize($y);
 		if ( !$b ){
 		$error = "authorization credential incorrect\n";
 		break;
@@ -315,7 +340,7 @@ $error = '';
 	case 'status':
 	$s = @shmop_open(ftok(__FILE__,'A'),'a',0600,10000);
 	$d = ( $s !== false ) ? trim(shmop_read($s,0,10000)) : false;
-		if ( !$d || strlen($d) < 100 ){
+		if ( $d === false || strlen($d) < 100 ){
 		$error = "could not read shared memory data\n";
 		break;
 		}

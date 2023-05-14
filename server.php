@@ -6,7 +6,7 @@ https://github.com/AnanasPfirsichSaft/pkvs
 
 MIT License
 
-Copyright (c) 2019-2021 AnanasPfirsichSaft
+Copyright (c) 2019-2023 AnanasPfirsichSaft
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -55,6 +55,7 @@ $__vault = array();
 $__clients = array();
 $__active = array();
 $__stats = array('.'=>0,'rx'=>0,'tx'=>0);
+$__verbose = false;
 $__auth_psk = array();
 $__auth_config_group = 0;
 $__auth_shutdown_group = 0;
@@ -72,8 +73,9 @@ $__greets = array(
 'The sanctity of this place has been fouled.',
 'Aaah! Fresh meat!'
 );
-function pkvs_echo($a,$b=true,$c=''){echo $a;if($b)echo chr(10);
-	if ( $b && $c !== 'NOLOG' && defined('PKVS_LOGFILE') && is_writeable(PKVS_LOGFILE) ){
+function pkvs_echo($a,$b=true,$c=''){
+if(strpos($c,'VERBOSE')===false){echo $a;if($b)echo chr(10);}
+	if ( $b && strpos($c,'NOLOG') !== false && defined('PKVS_LOGFILE') && is_writeable(PKVS_LOGFILE) ){
 	file_put_contents(PKVS_LOGFILE,'['.date('d.m H:i:s').'] '.$a.chr(10),FILE_APPEND);
 	chmod(PKVS_LOGFILE,0600);
 	}
@@ -100,12 +102,25 @@ function pkvs_var2arr(&$a){preg_match_all('/([a-z0-9]+)=["\']{1}(.+?)["\']{1}/u'
 foreach ( $b as $k )$a[$k[1]] = $k[2];}return true;}
 function pkvs_keymgr($a){
 global $__key,$__key_left,$__key_right;
+static $c = null;
 	if ( $a === '+' ){
 		if ( defined('PKVS_KEY_POOL') ){
 		$b = explode(';',PKVS_KEY_POOL);
 			switch ( $b[0] ){
 			case 'FILE':
 			$__key_right = ( is_file($b[1]) && is_readable($b[1]) ) ? file_get_contents($b[1],false,null,0,floor(PKVS_KEY_LENGTH/2)) : '';
+			break;
+			case 'FILE_RANDOM_OFFSET':
+			//clearstatcache(true,$b[1]);
+				if ( is_file($b[1]) && is_readable($b[1]) ){
+					if ( is_null($c) && filesize($b[1]) > 4*PKVS_KEY_LENGTH )
+					$c = mt_rand(0,filesize($b[1])-floor(PKVS_KEY_LENGTH/2)-1);
+					else
+					$c = 0;
+				$__key_right = file_get_contents($b[1],false,null,$c,floor(PKVS_KEY_LENGTH/2));
+				}
+				else
+				$__key_right = '';
 			break;
 			}
 			if ( strlen($__key_right) > 0 && strlen($__key_left.$__key_right) < PKVS_KEY_LENGTH )
@@ -188,13 +203,17 @@ $all_constants = get_defined_constants();
 	}
 echo "\n";
 echo "PKVS will bind to address '".PKVS_BIND_HOST."' on port ".PKVS_BIND_PORT."\n\n";
+echo "REQUIRED:\n";
 echo "--cipher=[name]\t\tUse cipher for encrypting the keys in vault\n";
-echo "\t\t\tSet 'auto', if unsure.\n";
+echo "\t\t\tSet 'auto', if unsure.\n\n";
+echo "OPTIONAL:\n";
+echo "--verbose\t\tBe verbose during normal operation\n";
 echo "--auth-file=[filename]\tExistence of this file is required to supply keys\n";
 echo "--pool=[fd]\t\tGet second half of the session key from external source\n";
 echo "--log=[filename]\tAlso forward outputs to logfile\n";
 echo "--no-auth\t\tNo authentication required for clients\n";
 echo "--no-socket\t\tNo network connection, dryrun only\n\n";
+echo "NO DAEMON MODE:\n";
 echo "--hash-psk\t\tAsk for psk from stdin to hash\n";
 echo "--gen-key=[ashex,bits]\tCreate a key for the vault\n";
 echo "\t\t\tIf ashex is '1', 'y', 'true' or 'ashex' the key will be\n";
@@ -279,7 +298,7 @@ $cli_args = array();
 		if ( substr($v,0,7) === '--pool=' ){
 		$v = substr($v,7);
 			if ( is_file($v) && is_readable($v) )
-			define('PKVS_KEY_POOL','FILE;'.$v);
+			define('PKVS_KEY_POOL','FILE_RANDOM_OFFSET;'.$v);
 			else
 			trigger_error('additional key material could not be read from pool. falling back to random key.',E_USER_WARNING);
 		}
@@ -291,6 +310,8 @@ $cli_args = array();
 		define('PKVS_DRYRUN',true);
 		if ( $v === '--no-auth' )
 		define('PKVS_NOAUTH',true);
+		if ( $v === '--verbose' )
+		$__verbose = true;
 	}
 
 	for ( $i = 0 ; $i < PKVS_MAX_CLIENTS ; $i++ )
@@ -360,7 +381,7 @@ pkvs_echo(str_repeat('=',72));
 unset($fp,$eb,$kl);
 
 	if ( defined('PKVS_DRYRUN') ){
-	pkvs_echo('Entering dryrun endless loop...');
+	pkvs_echo('Entering tedious endless loop...');
 	sleep(86400*365);
 	die();
 	}
@@ -374,10 +395,10 @@ unset($fp,$eb,$kl);
 			$__active[$i+1] = $__clients[$i]['sock'];
 		}
 		if ( $__alert_level > PKVS_MAXIMUM_ALERT_LEVEL ){
-		pkvs_echo('eek - alert level is above threshold. i will now call the crack suicide commando ;(');
+		pkvs_echo('eek - alert level is above threshold. i will now call the crack suicide commando ;(',true,'VERBOSE');
 		break;
 		}
-	pkvs_echo('*** #'.str_pad($__stats['.'],6,0,STR_PAD_LEFT).' AL['.$__alert_level.'] currently we have '.intval(sizeof($__active)-1).' connections, received '.$__stats['rx'].' bytes and sent '.$__stats['tx'].' bytes',true,'NOLOG');
+	pkvs_echo('*** #'.str_pad($__stats['.'],6,0,STR_PAD_LEFT).' AL['.$__alert_level.'] currently we have '.intval(sizeof($__active)-1).' connections, received '.$__stats['rx'].' bytes and sent '.$__stats['tx'].' bytes',true,'VERBOSE NOLOG');
 
 	// set up a blocking call to socket_select()
 	$write = null;
@@ -390,7 +411,7 @@ unset($fp,$eb,$kl);
 				if ( is_null($__clients[$i]['sock']) ){
 				$__clients[$i]['sock'] = socket_accept($sock);
 				socket_getpeername($__clients[$i]['sock'],$ph,$pp);
-				pkvs_echo(chr(9).'accepting connection for client '.$i.' ['.$ph.':'.$pp.']');
+				pkvs_echo(chr(9).'accepting connection for client '.$i.' ['.$ph.':'.$pp.']',false,'VERBOSE');
 				$__clients[$i]['ip'] = $ph;
 				$__clients[$i]['port'] = (int)$pp;
 					if ( defined('PKVS_NOAUTH') || sizeof($__auth_psk) === 0 )
@@ -402,7 +423,7 @@ unset($fp,$eb,$kl);
 				break;
 				}
 				elseif ( $i === PKVS_MAX_CLIENTS-1 )
-				pkvs_echo(chr(9).'maximum client number reached, rejecting new connections');
+				pkvs_echo(chr(9).'maximum client number reached, rejecting new connections',true,'VERBOSE');
 			}
 			if ( --$ready <= 0 )
 			continue;
@@ -427,12 +448,12 @@ unset($fp,$eb,$kl);
 			$input = trim(socket_read($__clients[$i]['sock'],8192));
 				if ( substr($input,0,1) === '_' ){ // clients cannot use "system command"...
 				$input = substr($input,1);
-				pkvs_echo(chr(9).'client tried to send system command - trimming input',true,'NOLOG');
+				pkvs_echo(chr(9).'client tried to send system command - trimming input',true,'VERBOSE NOLOG');
 				}
 /*			$bs = substr_count($input,' ');
 				if ( $bs > 16 ){ // abort on too many blank spaces
 				$input = '_ too_many_blank_spaces';
-				pkvs_echo(chr(9).'client sent too much blank spaces {'.$bs.'} - blanking input',true,'NOLOG');
+				pkvs_echo(chr(9).'client sent too much blank spaces {'.$bs.'} - blanking input',true,'VERBOSE NOLOG');
 				}*/
 			$__stats['rx'] += strlen($input);
 			$__clients[$i]['rx_cmds']++;
@@ -441,14 +462,14 @@ unset($fp,$eb,$kl);
 			$output = '';
 			unset($bs);
 				/*if ( is_null($input) || $input === '' ){
-				pkvs_echo(chr(9).'closing connection to client '.$i.' due to zero response');
+				pkvs_echo(chr(9).'closing connection to client '.$i.' due to zero response',true,'VERBOSE');
 				pkvs_close_socket($i);
 				continue;
 				}*/
 			$stack = explode(' ',$input);
 			pkvs_echo(chr(9).'fetching '.strlen($input).' bytes from client '.$i.' having command [#'
-			.$__clients[$i]['rx_cmds'].'/'.PKVS_MAXIMUM_CLIENT_COMMANDS_PER_CONNECTION.'] "'.substr($stack[0],0,16).'"');
-				if ( !$__clients[$i]['auth'] && !in_array(strtolower($stack[0]),array('help','auth','quit'),true) ){
+			.$__clients[$i]['rx_cmds'].'/'.PKVS_MAXIMUM_CLIENT_COMMANDS_PER_CONNECTION.'] "'.substr($stack[0],0,16).'"',true,'VERBOSE');
+				if ( !$__clients[$i]['auth'] && !in_array(strtolower($stack[0]),array('help','auth','quit')) ){
 				$stack[0] = '_';
 				$stack[1] = 'auth_required';
 				}
@@ -463,7 +484,6 @@ unset($fp,$eb,$kl);
 					break;
 					}
 					if ( strlen($__auth_file_in_fs) > 0 ){
-					clearstatcache(true,$__auth_file_in_fs);
 						if ( !file_exists($__auth_file_in_fs) ){
 						$output = pkvs_reply(403,'authentication file is missing');
 						break;
@@ -497,7 +517,7 @@ unset($fp,$eb,$kl);
 				$ok = false;
 				$kv = $stack;
 				unset($kv[0]); // input is xml formatted <key [args(key=value),...]>value</key>
-				preg_match_all('/<([a-z0-9]+)([a-z0-9 =",\*\']*)>(.+?)<\/\1>/u',implode(' ',$kv),$kv,PREG_SET_ORDER);
+				preg_match_all('/<([a-z0-9]+)([a-z0-9_ =",\*\'\-]*)>(.+?)<\/\1>/u',implode(' ',$kv),$kv,PREG_SET_ORDER);
 				//var_dump($kv);
 					if ( is_array($kv) && sizeof($kv) > 0 ){
 						foreach ( $kv as $kd ){
@@ -506,7 +526,7 @@ unset($fp,$eb,$kl);
 							pkvs_var2arr($kd[2]);
 							$kd[2]['id'] = abs($kd[2]['id']); // no negative values!
 							$__auth_psk[$kd[2]['id']] = $kd[3];
-							pkvs_echo(chr(9).chr(9).'configuring psk id '.$kd[2]['id']);
+							pkvs_echo(chr(9).chr(9).'configuring psk id '.$kd[2]['id'],true,'VERBOSE');
 							$ok = true;
 							break;
 							case 'cmd':
@@ -517,7 +537,7 @@ unset($fp,$eb,$kl);
 								$__auth_shutdown_group = abs($kd[3]);
 								if ( $kd[2]['name'] === 'status' )
 								$__auth_status_group = abs($kd[3]);
-							pkvs_echo(chr(9).chr(9).'configuring '.$kd[2]['name'].' to '.abs($kd[3]));
+							pkvs_echo(chr(9).chr(9).'configuring '.$kd[2]['name'].' to '.abs($kd[3]),true,'VERBOSE');
 							$ok = true;
 							break;
 							}
@@ -645,14 +665,14 @@ unset($fp,$eb,$kl);
 								if ( !isset($kv[2]['allow']) || $kv[2]['allow'] === '*' )
 								$kv[2]['allow'] = implode(',',array_keys($__auth_psk));
 								if ( isset($kv[2]['deny']) && $kv[2]['deny'] === '*' ){
-								pkvs_echo(chr(9).chr(9).'skip key '.(int)$kv[1].' due to deny all rule',true,'NOLOG');
+								pkvs_echo(chr(9).chr(9).'skip key '.(int)$kv[1].' due to deny all rule',true,'VERBOSE NOLOG');
 								continue;
 								}
 								if ( $kv[2]['encode'] === 'base64' )
 								$kv[3] = base64_decode($kv[3]);
 							$__vault[(int)$kv[1]] = array('group'=>array_unique(explode(',',$kv[2]['allow'])),'hash'=>pkvs_encrypt($kv[3]));
 							$ks[] = 'key '.(int)$kv[1].' stored, length is '.strlen($kv[3]);
-							pkvs_echo(chr(9).chr(9).'set key '.(int)$kv[1].', allow to group-id '.implode(',',$__vault[(int)$kv[1]]['group']),true,'NOLOG');
+							pkvs_echo(chr(9).chr(9).'set key '.(int)$kv[1].', allow to group-id '.implode(',',$__vault[(int)$kv[1]]['group']),true,'VERBOSE NOLOG');
 							pkvs_sanitize($kv[0],__LINE__);
 								if ( is_array($kv[2]) ){
 									foreach ( $kv[2] as $k1=>$k2 )
@@ -673,11 +693,11 @@ unset($fp,$eb,$kl);
 						if ( $ks === true || $ks === '' ){
 							if ( $kv === '-' ){
 							unset($__vault[$id]);
-							pkvs_echo(chr(9).chr(9).'unset key '.(int)$id);
+							pkvs_echo(chr(9).chr(9).'unset key '.(int)$id,true,'VERBOSE');
 							}
 							else{
 							$__vault[$id] = array('group'=>$ka,'hash'=>pkvs_encrypt($kv));
-							pkvs_echo(chr(9).chr(9).'set key '.(int)$id.', allow to all');
+							pkvs_echo(chr(9).chr(9).'set key '.(int)$id.', allow to all',true,'VERBOSE');
 							}
 						$output = pkvs_reply(200,array('key '.$id.' stored, length is '.strlen($kv)));
 						pkvs_sanitize($kv,__LINE__);
@@ -689,7 +709,7 @@ unset($fp,$eb,$kl);
 				unset($id,$ka,$kv,$kf,$ks,$k1,$k2);
 				break;
 				case 'exit': case 'quit':
-				pkvs_echo(chr(9).'connection abort requested by client '.$i);
+				pkvs_echo(chr(9).'connection abort requested by client '.$i,true,'VERBOSE');
 				$close = true;
 				break;
 				case 'help':
@@ -780,18 +800,18 @@ unset($fp,$eb,$kl);
 				$__stats['tx'] += strlen($output);
 				$d = socket_write($__clients[$i]['sock'],$output);
 					if ( !$d ){
-					pkvs_echo(chr(9).'socket to client '.$i.' appears to be broken');
+					pkvs_echo(chr(9).'socket to client '.$i.' appears to be broken',true,'VERBOSE');
 					$close = true;
 					}
 					else{
-					pkvs_echo(chr(9).'sending '.strlen($output).' bytes to client '.$i.' with code '.$__last_reply);
-//					pkvs_echo(chr(9).chr(9).'client '.$i.' => input('.wordwrap($input,72,"\n\t\t",true).') output('.wordwrap(preg_replace('/[\t\r\n\0]+/',' ',rtrim($output)),72,"\n\t\t",true).')'.chr(10),true,'NOLOG');
+					pkvs_echo(chr(9).'sending '.strlen($output).' bytes to client '.$i.' with code '.$__last_reply,true,'VERBOSE');
+//					pkvs_echo(chr(9).chr(9).'client '.$i.' => input('.wordwrap($input,72,"\n\t\t",true).') output('.wordwrap(preg_replace('/[\t\r\n\0]+/',' ',rtrim($output)),72,"\n\t\t",true).')'.chr(10),true,'VERBOSE NOLOG');
 						if ( $__last_reply === 200 )
 						$__alert_level = 0;
 					}
 				}
 				if ( $close ){
-				pkvs_echo(chr(9).'closing connection to client '.$i);
+				pkvs_echo(chr(9).'closing connection to client '.$i,true,'VERBOSE');
 				pkvs_close_socket($i);
 				}
 				foreach ( $stack as $ski=>$skv )
@@ -805,7 +825,7 @@ unset($fp,$eb,$kl);
 			else{ // end if: in_array($__clients[$i]['sock'],$__active)
 				// close any lonely socket, that´s still in list but not marked active
 				if ( !is_null($__clients[$i]['sock']) ){
-				pkvs_echo(chr(9).'closing left behind (inactive) connection to client '.$i);
+				pkvs_echo(chr(9).'closing left behind (inactive) connection to client '.$i,true,'VERBOSE');
 				pkvs_close_socket($i);
 				}
 			}
@@ -823,7 +843,7 @@ pkvs_sanitize($__tag,__LINE__);
 	pkvs_sanitize($__vault[$k]['hash'],__LINE__);
 	for ( $i = 0 ; $i < PKVS_MAX_CLIENTS ; $i++ ){
 		if ( !is_null($__clients[$i]['sock']) ){
-		pkvs_echo('closing remaining connection to client '.$i);
+		pkvs_echo('closing remaining connection to client '.$i,true,'VERBOSE');
 		socket_close($__clients[$i]['sock']);
 		}
 	}
@@ -832,7 +852,7 @@ socket_close($sock);
 		if ( !is_array($value) )
 		pkvs_sanitize($value,__LINE__);
 	}
-pkvs_echo('sensitive data purged from memory');
+pkvs_echo('sensitive data purged from memory',true,'VERBOSE');
 pkvs_echo('good bye and take care of yourself!');
 exit;
 ?>

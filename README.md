@@ -111,6 +111,8 @@ The lite version differs from the full version. Its cipher is hardcoded
 to "aes-256-ctr" and the second half of the key must come from an external
 file (called "pool"). The configuration is set by a XML file only. Authorization
 keys ("PSK") should be created with the full version, "server.php --hash-psk".
+Since 2023 the lite version supports argon2 for password storage. Your PHP installation
+must support it and the hashes can be created with "argon_hash.php".
 
 After setting the configuration you can copy the long return string as "integrity"
 to your XML file. This makes sure that your data was imported correctly.
